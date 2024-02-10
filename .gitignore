@@ -1,0 +1,10 @@
+.idea/
+.vscode/
+.vs_code/
+.DS_Store
+Thumbs.db
+*.swp
+
+target/
+Cargo.lock
+
