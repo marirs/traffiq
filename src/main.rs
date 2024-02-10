@@ -3,18 +3,15 @@ use futures::{executor::block_on, FutureExt};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
 use std::process::exit;
+#[cfg(target_family = "unix")]
+use traffiq::uds::{connect_to_uds, create_uds_server};
 use traffiq::{
     config::{Commands, Options},
-    tcp::connect_to_tcp,
-    tcp::connect_to_tcp_over_tls,
-    tcp::connect_to_tcp_with_payload_execution,
-    tcp::create_tcp_over_tls_server,
-    tcp::create_tcp_server,
-    tcp::create_tcp_server_with_payload_execution,
-    udp::connect_to_udp,
-    udp::create_udp_server,
-    uds::connect_to_uds,
-    uds::create_uds_server,
+    tcp::{
+        connect_to_tcp, connect_to_tcp_over_tls, connect_to_tcp_with_payload_execution,
+        create_tcp_over_tls_server, create_tcp_server, create_tcp_server_with_payload_execution,
+    },
+    udp::{connect_to_udp, create_udp_server},
     Result,
 };
 
@@ -26,6 +23,7 @@ pub async fn main() -> Result<()> {
         .init()?;
     let options = Options::parse();
     match &options.command {
+        #[cfg(target_family = "unix")]
         Commands::Listen {
             bind_host,
             port,
@@ -67,6 +65,45 @@ pub async fn main() -> Result<()> {
                 }
             });
         }
+        #[cfg(not(target_family = "unix"))]
+        Commands::Listen {
+            bind_host,
+            port,
+            tls,
+            cert,
+            key,
+            udp,
+            exec,
+        } => {
+            let listen_future = if *tls {
+                create_tcp_over_tls_server(
+                    Some(bind_host.as_str()),
+                    Some(*port),
+                    cert.clone().expect("cert is required."),
+                    key.clone().expect("key is required"),
+                )
+                .boxed()
+            } else if *udp {
+                create_udp_server(Some(bind_host.as_str()), Some(*port)).boxed()
+            } else if let Some(exec) = exec {
+                create_tcp_server_with_payload_execution(bind_host, port, exec.clone()).boxed()
+            } else {
+                create_tcp_server(Some(bind_host.as_str()), Some(*port)).boxed()
+            };
+            block_on(async {
+                tokio::select! {
+                    res = listen_future => {
+                        if let Err(e) = res {
+                            eprintln!("Listening failed: {}", e);
+                        }
+                    }
+                    _ = tokio::signal::ctrl_c() => {
+                        exit(0);
+                    }
+                }
+            });
+        }
+        #[cfg(target_family = "unix")]
         Commands::Connect {
             host,
             port,
@@ -89,6 +126,43 @@ pub async fn main() -> Result<()> {
                 .boxed()
             } else if *uds {
                 connect_to_uds(uds_path.clone().expect("uds-path is required.")).boxed()
+            } else if let Some(exec) = exec {
+                connect_to_tcp_with_payload_execution(host.as_str(), *port, exec.clone()).boxed()
+            } else {
+                connect_to_tcp(host.as_str(), *port).boxed()
+            };
+            block_on(async {
+                tokio::select! {
+                    res = connect_future => {
+                        if let Err(e) = res {
+                            eprintln!("Connecting failed: {}", e);
+                        }
+                    }
+                    _ = tokio::signal::ctrl_c() => {
+                        exit(0);
+                    }
+                }
+            });
+        }
+        #[cfg(not(target_family = "unix"))]
+        Commands::Connect {
+            host,
+            port,
+            tls,
+            ca,
+            udp,
+            listen_port,
+            exec,
+        } => {
+            let connect_future = if *tls {
+                connect_to_tcp_over_tls(host.as_str(), *port, ca).boxed()
+            } else if *udp {
+                connect_to_udp(
+                    Some(host.as_str()),
+                    *port,
+                    (*listen_port).expect("listen-port is required."),
+                )
+                .boxed()
             } else if let Some(exec) = exec {
                 connect_to_tcp_with_payload_execution(host.as_str(), *port, exec.clone()).boxed()
             } else {
