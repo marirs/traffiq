@@ -10,10 +10,9 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 use tokio_rustls::{
-    rustls::{
-        Certificate, ClientConfig, OwnedTrustAnchor, PrivateKey, RootCertStore, ServerConfig,
-    },
-    TlsAcceptor, TlsConnector,
+    rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs1KeyDer},
+    rustls::{ClientConfig, RootCertStore, ServerConfig},
+    {TlsAcceptor, TlsConnector},
 };
 
 pub async fn connect_to_tcp_over_tls(
@@ -22,28 +21,22 @@ pub async fn connect_to_tcp_over_tls(
     ca: &Option<String>,
 ) -> crate::Result<()> {
     let mut root_store = RootCertStore::empty();
-    root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
-        OwnedTrustAnchor::from_subject_spki_name_constraints(
-            ta.subject.to_vec(),
-            ta.subject_public_key_info.to_vec(),
-            ta.name_constraints.as_ref().map(|nc| nc.to_vec()),
-        )
-    }));
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     if let Some(ca) = ca {
-        for cert in load_certs(Path::new(ca.as_str()))? {
+        for cert in load_certs(ca.clone())? {
             root_store
-                .add(&cert)
+                .add(cert)
                 .map_err(|_e| TlsError("Could not add CA.".to_string()))?;
         }
     }
     let config = ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(root_store)
         .with_no_client_auth();
     let rc_config = Arc::new(config);
     let tls_connector = TlsConnector::from(rc_config);
     let addr = format!("{host}:{port}");
     let server_name = host
+        .to_string()
         .try_into()
         .map_err(|_| DnsError("Invalid DNS Name.".to_string()))?;
     let socket = TcpStream::connect(addr).await?;
@@ -100,10 +93,9 @@ pub async fn create_tcp_over_tls_server(
     let host = host.unwrap_or(LOCALHOST);
     let port = port.unwrap_or(0);
     let addr = format!("{host}:{port}");
-    let certs = load_certs(Path::new(cert.as_str()))?;
-    let mut keys = load_keys(Path::new(key.as_str()))?;
+    let certs = load_certs(cert.clone())?;
+    let mut keys = load_keys(key.clone())?;
     let config = ServerConfig::builder()
-        .with_safe_defaults()
         .with_no_client_auth()
         .with_single_cert(certs, keys.remove(0))?;
     let tls_acceptor = TlsAcceptor::from(Arc::new(config));
@@ -118,10 +110,11 @@ pub async fn create_tcp_over_tls_server(
 }
 
 /// Load certificates from the given path.
-fn load_certs(path: &Path) -> crate::Result<Vec<Certificate>> {
-    let f = File::open(path)?;
-    let certs = rustls_pemfile::certs(&mut BufReader::new(f))
-        .map(|certs| Certificate(certs.unwrap().to_vec()))
+fn load_certs(path: String) -> crate::Result<Vec<CertificateDer<'static>>> {
+    let path = Path::new(&path);
+    let mut pemfile = BufReader::new(File::open(path)?);
+    let certs = rustls_pemfile::certs(&mut pemfile)
+        .map(|cert| CertificateDer::from(cert.unwrap().to_vec()))
         .collect::<Vec<_>>();
     info!(
         "Loaded {} certificates from \"{}\".",
@@ -132,10 +125,15 @@ fn load_certs(path: &Path) -> crate::Result<Vec<Certificate>> {
 }
 
 /// Load private keys from the given path.
-fn load_keys(path: &Path) -> crate::Result<Vec<PrivateKey>> {
+fn load_keys(path: String) -> crate::Result<Vec<PrivateKeyDer<'static>>> {
+    let path = Path::new(&path);
     let f = File::open(path)?;
     let keys = rustls_pemfile::rsa_private_keys(&mut BufReader::new(f))
-        .map(|keys| PrivateKey(keys.unwrap().secret_pkcs1_der().to_vec()))
+        .map(|key| {
+            PrivateKeyDer::Pkcs1(PrivatePkcs1KeyDer::from(
+                key.unwrap().secret_pkcs1_der().to_vec(),
+            ))
+        })
         .collect::<Vec<_>>();
     info!(
         "Loaded {} private keys from \"{}\".",
