@@ -2,6 +2,11 @@
 name = "traffiq"
 description = "Traffiq is a simple utility which reads and writes data across network connections, using HTTP, TCP or UDP protocol."
 version = "0.1.0"
+readme = "README.md"
+license-file = "LICENSE"
+repository = "https://github.com/marirs/traffiq"
+homepage = "https://github.com/marirs/traffiq"
+keywords = ["traffiq", "netcat", "tcp", "udp", "http"]
 edition = "2021"
 authors = ["Sriram G. < marirs@gmail.com>"]
 
