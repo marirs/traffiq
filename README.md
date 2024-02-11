@@ -1,5 +1,10 @@
 # Traffiq
 
+[![Windows](https://github.com/marirs/traffiq/actions/workflows/windows.yml/badge.svg?branch=master)](https://github.com/marirs/traffiq/actions/workflows/windows.yml)
+[![macOS](https://github.com/marirs/traffiq/actions/workflows/macos.yml/badge.svg?branch=master)](https://github.com/marirs/traffiq/actions/workflows/macos.yml)
+[![Linux x86_64](https://github.com/marirs/traffiq/actions/workflows/linux_x86-64.yml/badge.svg?branch=master)](https://github.com/marirs/traffiq/actions/workflows/linux_x86-64.yml)
+[![Linux Arm7](https://github.com/marirs/traffiq/actions/workflows/linux_arm7.yml/badge.svg?branch=master)](https://github.com/marirs/traffiq/actions/workflows/linux_arm7.yml)
+
 Traffiq is a simple utility which reads and writes data across network connections, using HTTP, TCP or UDP protocol. It is designed to be a reliable "back-end" tool that can be used directly or easily driven by other programs and scripts.
 
 A netcat inspired implementation written in Rust. It implements the following features:
