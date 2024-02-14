@@ -10,9 +10,11 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 use tokio_rustls::{
-    rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs1KeyDer},
-    rustls::{ClientConfig, RootCertStore, ServerConfig},
-    {TlsAcceptor, TlsConnector},
+    rustls::{
+        pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs1KeyDer, PrivatePkcs8KeyDer},
+        {ClientConfig, RootCertStore, ServerConfig},
+    },
+    TlsAcceptor, TlsConnector,
 };
 
 pub async fn connect_to_tcp_over_tls(
@@ -83,18 +85,38 @@ pub async fn create_tcp_server(host: Option<&str>, port: Option<u16>) -> crate::
     }
 }
 
-/// Create a server that serves TLS on the given port. If none is given, use a random port.
+/// Create a server that serves TLS on the given port. If none is given, use a random port. You also provide the certificate
+/// and key to use within the `cert_info` param as a tuple. If None is provided we generate a cert.
+/// ## Example
+/// ```Example
+///     // Use the default host and a random port with the provided certificate and key.
+///     create_tcp_over_tls_server(None, None, Some(("path_to_ca_file".to_string(), "path_to_key_file".to_string())));
+///
+/// ```
 pub async fn create_tcp_over_tls_server(
     host: Option<&str>,
     port: Option<u16>,
-    cert: String,
-    key: String,
+    cert_info: Option<(String, String)>,
 ) -> crate::Result<()> {
     let host = host.unwrap_or(LOCALHOST);
     let port = port.unwrap_or(0);
     let addr = format!("{host}:{port}");
-    let certs = load_certs(cert.clone())?;
-    let mut keys = load_keys(key.clone())?;
+    let mut certs = vec![];
+    let mut keys = vec![];
+    if let Some((cert, key)) = cert_info {
+        info!("Loading certificates and keys from the given paths...");
+        certs = load_certs(cert.clone())?;
+        keys = load_keys(key.clone())?;
+    } else {
+        info!("Generating certificates and keys...");
+        let cert = crate::utils::generate_cert();
+        certs.push(CertificateDer::from(
+            cert.x509_certificate.to_der().unwrap(),
+        ));
+        keys.push(PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+            cert.private_key.private_key_to_pkcs8().unwrap(),
+        )));
+    }
     let config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, keys.remove(0))?;

@@ -1,6 +1,6 @@
 use futures::{stream, StreamExt};
 use log::{debug, info};
-use std::{sync::Arc, time::Duration};
+use std::{ops::RangeInclusive, sync::Arc, time::Duration};
 use tokio::{io::AsyncWriteExt, net::TcpStream, sync::Mutex};
 
 pub mod config;
@@ -9,15 +9,19 @@ pub mod tcp;
 pub mod udp;
 mod utils;
 
+pub mod http;
 #[cfg(target_family = "unix")]
 pub mod uds;
 
 pub type Result<T> = std::result::Result<T, crate::error::Error>;
 
+/// Default Localhost
 pub const LOCALHOST: &str = "127.0.0.1";
 
+/// Default Any Host
 pub const ANY_HOST: &str = "0.0.0.0";
 
+/// Most Common Ports
 pub const MOST_COMMON_PORTS_1002: &[u16] = &[
     5601, 9300, 80, 23, 443, 21, 22, 25, 3389, 110, 445, 139, 143, 53, 135, 3306, 8080, 1723, 111,
     995, 993, 5900, 1025, 587, 8888, 199, 1720, 465, 548, 113, 81, 6001, 10000, 514, 5060, 179,
@@ -28,6 +32,12 @@ pub const MOST_COMMON_PORTS_1002: &[u16] = &[
     3001, 5001, 82, 10010, 1030, 9090, 2107, 1024, 2103, 6004, 1801, 5050, 19, 8031, 1041, 255,
     27017, 5432, 5050,
 ];
+
+/// Max Port number
+pub const MAX_PORT: usize = 65535;
+
+/// Port Range
+pub const PORT_RANGE: RangeInclusive<usize> = 1..=MAX_PORT;
 
 /// Check for the open ports on a host.
 pub async fn check_open_ports_v2(host: &str, ports: Vec<u16>) -> Result<()> {

@@ -1,9 +1,9 @@
 use crate::{
     error::Error::{GenericError, InvalidPortError},
-    Result,
+    Result, PORT_RANGE,
 };
 use clap::{Parser, Subcommand};
-use std::{ops::RangeInclusive, path::Path};
+use std::path::Path;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -19,13 +19,14 @@ pub enum Commands {
     #[command(alias = "l")]
     Listen {
         /// The host to bind the listener to.
+        #[arg(long, short, default_value = "0.0.0.0")]
         bind_host: String,
 
         /// The port to bind the listener to.
         #[arg(long, short, value_parser = port_in_range)]
         port: u16,
 
-        /// Use TLS for the connection.
+        /// Use TLS for the connection. Used with TCP and HTTP.
         #[arg(long, default_value_t = false)]
         tls: bool,
 
@@ -37,12 +38,16 @@ pub enum Commands {
         #[arg(long, value_parser = valid_path)]
         key: Option<String>,
 
+        /// Use HTTP server for the connection.
+        #[arg(long, default_value_t = false)]
+        http: bool,
+
         /// Use UDP for the connection.
         #[arg(long, default_value_t = false)]
         udp: bool,
 
+        /// Use UDS server (Unix only) for the connection.
         #[cfg(target_family = "unix")]
-        /// Spin up a UDS server (Unix only).
         #[arg(long, default_value_t = false)]
         uds: bool,
 
@@ -110,11 +115,9 @@ pub enum Commands {
         /// The upper port to scan.
         #[arg(long, value_parser = port_in_range)]
         hi: Option<u16>,
+
     },
 }
-
-const MAX_PORT: usize = 65535;
-const PORT_RANGE: RangeInclusive<usize> = 1..=MAX_PORT;
 
 fn port_in_range(port_str: &str) -> Result<u16> {
     let port: usize = port_str

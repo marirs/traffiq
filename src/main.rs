@@ -1,12 +1,14 @@
 use clap::Parser;
 use futures::{executor::block_on, FutureExt};
-use log::LevelFilter;
+use log::{info, LevelFilter};
 use simple_logger::SimpleLogger;
+use std::net::ToSocketAddrs;
 use std::process::exit;
 #[cfg(target_family = "unix")]
 use traffiq::uds::{connect_to_uds, create_uds_server};
 use traffiq::{
     config::{Commands, Options},
+    http::{create_http_server, HttpServerSettings, ServerConfig, SslConfig},
     tcp::{
         connect_to_tcp, connect_to_tcp_over_tls, connect_to_tcp_with_payload_execution,
         create_tcp_over_tls_server, create_tcp_server, create_tcp_server_with_payload_execution,
@@ -30,25 +32,71 @@ pub async fn main() -> Result<()> {
             tls,
             cert,
             key,
+            http,
             udp,
-            exec,
             uds,
             uds_path,
+            exec,
         } => {
-            let listen_future = if *tls {
-                create_tcp_over_tls_server(
-                    Some(bind_host.as_str()),
-                    Some(*port),
-                    cert.clone().expect("cert is required."),
-                    key.clone().expect("key is required"),
-                )
-                .boxed()
-            } else if *udp {
+            let listen_future = if *udp {
                 create_udp_server(Some(bind_host.as_str()), Some(*port)).boxed()
             } else if let Some(exec) = exec {
                 create_tcp_server_with_payload_execution(bind_host, port, exec.clone()).boxed()
             } else if *uds {
                 create_uds_server(uds_path.clone().expect("uds-path is required.")).boxed()
+            } else if *http {
+                // make the bind_host resolve using DNS if required.
+                let bind_host = format!("{}:{}", bind_host, port)
+                    .to_socket_addrs()
+                    .unwrap()
+                    .last()
+                    .unwrap()
+                    .ip();
+                let ssl_settings = if *tls {
+                    if let Some(cert_file) = cert {
+                        if let Some(key_file) = key {
+                            Some(SslConfig {
+                                enabled: true,
+                                generate_self_signed: false,
+                                key_file: key_file.clone(),
+                                cert_file: cert_file.clone(),
+                                ..Default::default()
+                            })
+                        } else {
+                            // Missing Key file.
+                            Some(SslConfig {
+                                enabled: true,
+                                ..Default::default()
+                            })
+                        }
+                    } else {
+                        Some(SslConfig {
+                            enabled: true,
+                            ..Default::default()
+                        })
+                    }
+                } else {
+                    None
+                };
+                let mut https_settings = HttpServerSettings {
+                    server: ServerConfig {
+                        host: bind_host,
+                        port: *port as usize,
+                        ..Default::default()
+                    },
+                    ssl: ssl_settings,
+                };
+                https_settings.init()?;
+                create_http_server(https_settings).boxed()
+            } else if *tls {
+                let mut cert_info = None;
+                if let Some(cert) = cert {
+                    if let Some(key) = key {
+                        cert_info = Some((cert.clone(), key.clone()));
+                    }
+                }
+                info!("Creating TCP over TLS server");
+                create_tcp_over_tls_server(Some(bind_host.as_str()), Some(*port), cert_info).boxed()
             } else {
                 create_tcp_server(Some(bind_host.as_str()), Some(*port)).boxed()
             };
@@ -74,19 +122,64 @@ pub async fn main() -> Result<()> {
             key,
             udp,
             exec,
+            http,
         } => {
-            let listen_future = if *tls {
-                create_tcp_over_tls_server(
-                    Some(bind_host.as_str()),
-                    Some(*port),
-                    cert.clone().expect("cert is required."),
-                    key.clone().expect("key is required"),
-                )
-                .boxed()
-            } else if *udp {
+            let listen_future = if *udp {
                 create_udp_server(Some(bind_host.as_str()), Some(*port)).boxed()
             } else if let Some(exec) = exec {
                 create_tcp_server_with_payload_execution(bind_host, port, exec.clone()).boxed()
+            } else if *http {
+                // make the bind_host resolve using DNS if required.
+                let bind_host = format!("{}:{}", bind_host, port)
+                    .to_socket_addrs()
+                    .unwrap()
+                    .last()
+                    .unwrap()
+                    .ip();
+                let ssl_settings = if *tls {
+                    if let Some(cert_file) = cert {
+                        if let Some(key_file) = key {
+                            Some(SslConfig {
+                                enabled: true,
+                                generate_self_signed: false,
+                                key_file: key_file.clone(),
+                                cert_file: cert_file.clone(),
+                                ..Default::default()
+                            })
+                        } else {
+                            // Missing Key file.
+                            Some(SslConfig {
+                                enabled: true,
+                                ..Default::default()
+                            })
+                        }
+                    } else {
+                        Some(SslConfig {
+                            enabled: true,
+                            ..Default::default()
+                        })
+                    }
+                } else {
+                    None
+                };
+                let mut https_settings = HttpServerSettings {
+                    server: ServerConfig {
+                        host: bind_host,
+                        port: *port as usize,
+                        ..Default::default()
+                    },
+                    ssl: ssl_settings,
+                };
+                https_settings.init()?;
+                create_http_server(https_settings).boxed()
+            } else if *tls {
+                let mut cert_info = None;
+                if let Some(cert) = cert {
+                    if let Some(key) = key {
+                        cert_info = Some((cert.clone(), key.clone()));
+                    }
+                }
+                create_tcp_over_tls_server(Some(bind_host.as_str()), Some(*port), cert_info).boxed()
             } else {
                 create_tcp_server(Some(bind_host.as_str()), Some(*port)).boxed()
             };
